@@ -18,7 +18,7 @@ use ignore::WalkBuilder;
 use regex::bytes::Regex;
 
 const GLOBAL_STEP_COUNT: u32 = 3;
-const PROJECT_STEP_COUNT: u32 = 2;
+const PROJECT_STEP_COUNT: u32 = 3;
 
 fn main() {
     let args: Vec<_> = env::args().collect();
@@ -60,13 +60,15 @@ fn main() {
             continue;
         }
 
-        println!("{} 📡  Checking project for search pattern again...", step(2, PROJECT_STEP_COUNT));
+        println!("{} 🔬  Checking project for search pattern again...", step(2, PROJECT_STEP_COUNT));
         if !check_project(&path) {
             println!("Search pattern is no longer found. Skipping project!");
             continue;
         }
 
-        // - create branch at `upstream/master` or `origin/master`
+        println!("{} 📎  Creating new `travis-sudo` branch...", step(3, PROJECT_STEP_COUNT));
+        create_branch("travis-sudo", &path);
+
         // - fix code
         // - commit changes
         // - push new branch to `origin`
@@ -219,4 +221,26 @@ fn git_checkout(remote: &str, path: &PathBuf) -> Command {
     let mut command = Command::new("git");
     command.arg("checkout").arg(format!("{}/master", remote)).current_dir(path);
     command
+}
+
+fn create_branch(name: &str, path: &PathBuf) -> bool {
+    let mut command = Command::new("git");
+    command.arg("checkout").arg("-b").arg(name).current_dir(path);
+
+    let result = command.output();
+
+    let output = match result {
+        Ok(output) => output,
+        Err(err) => {
+            println!("ERROR: {}", err);
+            return false;
+        },
+    };
+
+    if !output.status.success() {
+        println!("ERROR: {}", String::from_utf8(output.stderr).unwrap());
+        return false;
+    }
+
+    true
 }

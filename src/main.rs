@@ -3,6 +3,7 @@ extern crate cursive;
 extern crate ignore;
 #[macro_use] extern crate lazy_static;
 extern crate regex;
+extern crate webbrowser;
 
 use std::env;
 use std::fs;
@@ -18,7 +19,7 @@ use ignore::WalkBuilder;
 use regex::bytes::Regex;
 
 const GLOBAL_STEP_COUNT: u32 = 3;
-const PROJECT_STEP_COUNT: u32 = 5;
+const PROJECT_STEP_COUNT: u32 = 7;
 
 fn main() {
     let args: Vec<_> = env::args().collect();
@@ -67,18 +68,30 @@ fn main() {
         }
 
         println!("{} 📎  Creating new `travis-sudo` branch...", step(3, PROJECT_STEP_COUNT));
-        create_branch("travis-sudo", &path);
+        if !create_branch("travis-sudo", &path) {
+            continue;
+        }
 
         println!("{} 🛠  Fixing the project...", step(4, PROJECT_STEP_COUNT));
-        fix_project(&path);
+        if !fix_project(&path) {
+            continue;
+        }
 
         println!("{} 💾  Committing changes...", step(5, PROJECT_STEP_COUNT));
-        commit_changes("TravisCI: Remove deprecated `sudo: false` option", &path);
+        if !commit_changes("TravisCI: Remove deprecated `sudo: false` option\n\nsee https://blog.travis-ci.com/2018-11-19-required-linux-infrastructure-migration", &path) {
+            continue;
+        }
 
-        println!("{} ☁️  Uploading changes...", step(5, PROJECT_STEP_COUNT));
-        push_as_new_branch(&path);
+        println!("{} ☁️  Uploading changes...", step(6, PROJECT_STEP_COUNT));
+        let url = match push_as_new_branch(&path) {
+            Some(url) => url,
+            None => continue,
+        };
 
-        // - open browser with PR URL
+        println!("{} 📬️  Opening browser for PR...", step(7, PROJECT_STEP_COUNT));
+        if let Err(err) = webbrowser::open(&url) {
+            println!("ERROR: {}", err);
+        }
     }
 }
 
@@ -323,7 +336,7 @@ fn commit_changes(message: &str, path: &PathBuf) -> bool {
     true
 }
 
-fn push_as_new_branch(path: &PathBuf) -> bool {
+fn push_as_new_branch(path: &PathBuf) -> Option<String> {
     let mut command = Command::new("git");
     command.arg("push").arg("origin").arg("HEAD").arg("-u").current_dir(path);
 
@@ -333,14 +346,26 @@ fn push_as_new_branch(path: &PathBuf) -> bool {
         Ok(output) => output,
         Err(err) => {
             println!("ERROR: {}", err);
-            return false;
+            return None;
         },
     };
 
     if !output.status.success() {
         println!("ERROR: {}", String::from_utf8(output.stderr).unwrap());
-        return false;
+        return None;
     }
 
-    true
+    lazy_static! {
+        static ref RE: Regex = Regex::new(r"https://github.com/.*\n").unwrap();
+    }
+
+    let cap = match RE.find(&output.stderr) {
+        Some(cap) => cap,
+        None => {
+            println!("ERROR: Could not find PR URL in:\n{}", std::str::from_utf8(&output.stderr).unwrap());
+            return None;
+        }
+    };
+
+    Some(std::str::from_utf8(cap.as_bytes()).unwrap().trim().to_owned())
 }

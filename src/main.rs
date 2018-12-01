@@ -75,7 +75,9 @@ fn main() {
         println!("{} 💾  Committing changes...", step(5, PROJECT_STEP_COUNT));
         commit_changes("TravisCI: Remove deprecated `sudo: false` option", &path);
 
-        // - push new branch to `origin`
+        println!("{} ☁️  Uploading changes...", step(5, PROJECT_STEP_COUNT));
+        push_as_new_branch(&path);
+
         // - open browser with PR URL
     }
 }
@@ -302,6 +304,28 @@ fn commit_changes(message: &str, path: &PathBuf) -> bool {
 
     let mut command = Command::new("git");
     command.arg("commit").arg("-m").arg(message).current_dir(path);
+
+    let result = command.output();
+
+    let output = match result {
+        Ok(output) => output,
+        Err(err) => {
+            println!("ERROR: {}", err);
+            return false;
+        },
+    };
+
+    if !output.status.success() {
+        println!("ERROR: {}", String::from_utf8(output.stderr).unwrap());
+        return false;
+    }
+
+    true
+}
+
+fn push_as_new_branch(path: &PathBuf) -> bool {
+    let mut command = Command::new("git");
+    command.arg("push").arg("origin").arg("HEAD").arg("-u").current_dir(path);
 
     let result = command.output();
 

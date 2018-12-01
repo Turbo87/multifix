@@ -1,4 +1,5 @@
 extern crate colored;
+extern crate cursive;
 extern crate ignore;
 #[macro_use] extern crate lazy_static;
 extern crate regex;
@@ -8,29 +9,38 @@ use std::fs;
 use std::path::PathBuf;
 
 use colored::*;
+use cursive::Cursive;
+use cursive::event::Key;
+use cursive::traits::{Boxable, Identifiable, Scrollable};
+use cursive::views::{Checkbox, DummyView, ListView};
 use ignore::WalkBuilder;
 use regex::bytes::Regex;
 
 fn main() {
     let args: Vec<_> = env::args().collect();
 
-    let path = args.get(1)
+    let root_path = args.get(1)
         .map(|it| PathBuf::from(it))
         .unwrap_or_else(|| env::current_dir().unwrap());
 
-    let path = fs::canonicalize(path).unwrap();
+    let root_path = fs::canonicalize(root_path).unwrap();
 
-    println!("{} 🔍  Searching for git projects in {}...", step(1), path.display());
-    let git_projects: Vec<_> = find_git_projects(&path);
+    println!("{} 🔍  Searching for git projects in {}...", step(1), root_path.display());
+    let git_projects: Vec<_> = find_git_projects(&root_path);
 
     println!("{} 🔬  Checking {} projects for search pattern...", step(2), git_projects.len());
     let relevant_projects: Vec<_> = git_projects.iter()
         .filter(|path| check_project(path))
         .collect();
 
-    println!("\nFound {} relevant projects", relevant_projects.len())
+    // Convert path list to path+label list and sort it by label
+    let relevant_projects = add_labels_and_sort(&relevant_projects, &root_path);
 
-    // - show checkboxed list of potentially fixable projects
+    // Show checkboxed list of potentially fixable projects
+    let selected_projects = show_project_list(&relevant_projects);
+
+    println!("\nSelected {} relevant projects", selected_projects.len())
+
     // - update checked projects (git fetch)
     // - check again on `upstream/master` or `origin/master`
     // - create branch at `upstream/master` or `origin/master`
@@ -86,4 +96,45 @@ fn check_project(path: &PathBuf) -> bool {
     };
 
     RE.is_match(&content)
+}
+
+fn add_labels_and_sort<'a>(paths: &'a Vec<&'a PathBuf>, root_path: &PathBuf) -> Vec<(&'a &'a PathBuf, String)> {
+    let mut list: Vec<_> = paths.iter()
+        .map(|path| {
+            let relative_path = path.strip_prefix(&root_path).unwrap_or(path);
+            let label = relative_path.display().to_string();
+            (path, label)
+        })
+        .collect();
+
+    list.sort();
+
+    list
+}
+
+fn show_project_list<'a>(input: &'a Vec<(&'a &'a PathBuf, String)>) -> Vec<&'a (&'a &'a PathBuf, String)> {
+    let mut siv = Cursive::default();
+
+    let list_view = {
+        let mut list = ListView::new();
+
+        list.add_child("Please select the projects to fix. Confirm selection with <F5>.", DummyView);
+        list.add_delimiter();
+
+        for (_, label) in input.iter() {
+            list.add_child(&label, Checkbox::new().with_id(label.clone()));
+        }
+
+        list.with_id("list").scrollable().full_screen()
+    };
+
+    siv.add_fullscreen_layer(list_view);
+
+    siv.add_global_callback(Key::F5, Cursive::quit);
+
+    siv.run();
+
+    input.iter()
+        .filter(|(_, label)| siv.find_id::<Checkbox>(&label).unwrap().is_checked())
+        .collect()
 }

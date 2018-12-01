@@ -7,6 +7,7 @@ extern crate regex;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 
 use colored::*;
 use cursive::Cursive;
@@ -15,6 +16,9 @@ use cursive::traits::{Boxable, Identifiable, Scrollable};
 use cursive::views::{Checkbox, DummyView, ListView};
 use ignore::WalkBuilder;
 use regex::bytes::Regex;
+
+const GLOBAL_STEP_COUNT: u32 = 3;
+const PROJECT_STEP_COUNT: u32 = 2;
 
 fn main() {
     let args: Vec<_> = env::args().collect();
@@ -25,34 +29,53 @@ fn main() {
 
     let root_path = fs::canonicalize(root_path).unwrap();
 
-    println!("{} 🔍  Searching for git projects in {}...", step(1), root_path.display());
+    print!("{} 🔍  Searching for git projects in {}...", step(1, GLOBAL_STEP_COUNT), root_path.display());
     let git_projects: Vec<_> = find_git_projects(&root_path);
+    println!(" ({} projects found)", git_projects.len());
 
-    println!("{} 🔬  Checking {} projects for search pattern...", step(2), git_projects.len());
+    print!("{} 🔬  Checking projects for search pattern...", step(2, GLOBAL_STEP_COUNT));
     let relevant_projects: Vec<_> = git_projects.iter()
         .filter(|path| check_project(path))
         .collect();
 
     // Convert path list to path+label list and sort it by label
     let relevant_projects = add_labels_and_sort(&relevant_projects, &root_path);
+    println!(" ({} projects found)", relevant_projects.len());
 
     // Show checkboxed list of potentially fixable projects
+    print!("{} 🔬  Select projects to fix...", step(3, GLOBAL_STEP_COUNT));
     let selected_projects = show_project_list(&relevant_projects);
+    println!(" ({} projects selected)", selected_projects.len());
 
-    println!("\nSelected {} relevant projects", selected_projects.len())
+    for (path, label) in selected_projects {
+        println!();
+        println!("  {}", label.underline());
+        println!();
 
-    // - update checked projects (git fetch)
-    // - check again on `upstream/master` or `origin/master`
-    // - create branch at `upstream/master` or `origin/master`
-    // - fix code
-    // - commit changes
-    // - push new branch to `origin`
-    // - open browser with PR URL
+        println!("{} 📡  Updating project...", step(1, PROJECT_STEP_COUNT));
+        if !update_project(&path) {
+            continue;
+        }
+        if !checkout_master(&path) {
+            continue;
+        }
+
+        println!("{} 📡  Checking project for search pattern again...", step(2, PROJECT_STEP_COUNT));
+        if !check_project(&path) {
+            println!("Search pattern is no longer found. Skipping project!");
+            continue;
+        }
+
+        // - create branch at `upstream/master` or `origin/master`
+        // - fix code
+        // - commit changes
+        // - push new branch to `origin`
+        // - open browser with PR URL
+    }
 }
 
-fn step(n: u32) -> ColoredString {
-    const STEP_COUNT: u32 = 2;
-    format!("[{}/{}]", n, STEP_COUNT).dimmed()
+fn step(n: u32, total: u32) -> ColoredString {
+    format!("[{}/{}]", n, total).dimmed()
 }
 
 fn find_git_projects(path: &PathBuf) -> Vec<PathBuf> {
@@ -137,4 +160,63 @@ fn show_project_list<'a>(input: &'a Vec<(&'a &'a PathBuf, String)>) -> Vec<&'a (
     input.iter()
         .filter(|(_, label)| siv.find_id::<Checkbox>(&label).unwrap().is_checked())
         .collect()
+}
+
+fn update_project(path: &PathBuf) -> bool {
+    let mut git_fetch_upstream = git_fetch("upstream", &path);
+    let mut git_fetch_origin = git_fetch("origin", &path);
+
+    let result = git_fetch_upstream.output()
+        .or_else(|_| git_fetch_origin.output());
+
+    let output = match result {
+        Ok(output) => output,
+        Err(err) => {
+            println!("ERROR: {}", err);
+            return false;
+        },
+    };
+
+    if !output.status.success() {
+        println!("ERROR: {}", String::from_utf8(output.stderr).unwrap());
+        return false;
+    }
+
+    true
+}
+
+fn git_fetch(remote: &str, path: &PathBuf) -> Command {
+    let mut command = Command::new("git");
+    command.arg("fetch").arg(remote).current_dir(path);
+    command
+}
+
+
+fn checkout_master(path: &PathBuf) -> bool {
+    let mut git_checkout_upstream = git_checkout("upstream", &path);
+    let mut git_checkout_origin = git_checkout("origin", &path);
+
+    let result = git_checkout_upstream.output()
+        .or_else(|_| git_checkout_origin.output());
+
+    let output = match result {
+        Ok(output) => output,
+        Err(err) => {
+            println!("ERROR: {}", err);
+            return false;
+        },
+    };
+
+    if !output.status.success() {
+        println!("ERROR: {}", String::from_utf8(output.stderr).unwrap());
+        return false;
+    }
+
+    true
+}
+
+fn git_checkout(remote: &str, path: &PathBuf) -> Command {
+    let mut command = Command::new("git");
+    command.arg("checkout").arg(format!("{}/master", remote)).current_dir(path);
+    command
 }

@@ -18,7 +18,7 @@ use ignore::WalkBuilder;
 use regex::bytes::Regex;
 
 const GLOBAL_STEP_COUNT: u32 = 3;
-const PROJECT_STEP_COUNT: u32 = 3;
+const PROJECT_STEP_COUNT: u32 = 5;
 
 fn main() {
     let args: Vec<_> = env::args().collect();
@@ -69,8 +69,12 @@ fn main() {
         println!("{} 📎  Creating new `travis-sudo` branch...", step(3, PROJECT_STEP_COUNT));
         create_branch("travis-sudo", &path);
 
-        // - fix code
-        // - commit changes
+        println!("{} 🛠  Fixing the project...", step(4, PROJECT_STEP_COUNT));
+        fix_project(&path);
+
+        println!("{} 💾  Committing changes...", step(5, PROJECT_STEP_COUNT));
+        commit_changes("TravisCI: Remove deprecated `sudo: false` option", &path);
+
         // - push new branch to `origin`
         // - open browser with PR URL
     }
@@ -109,7 +113,7 @@ fn check_project(path: &PathBuf) -> bool {
     }
 
     lazy_static! {
-        static ref RE: Regex = Regex::new(r"sudo: false\ndist: trusty").unwrap();
+        static ref RE: Regex = Regex::new(r"sudo: false\ndist: trusty\n\n").unwrap();
     }
 
     let content = match fs::read(travis_path) {
@@ -226,6 +230,78 @@ fn git_checkout(remote: &str, path: &PathBuf) -> Command {
 fn create_branch(name: &str, path: &PathBuf) -> bool {
     let mut command = Command::new("git");
     command.arg("checkout").arg("-b").arg(name).current_dir(path);
+
+    let result = command.output();
+
+    let output = match result {
+        Ok(output) => output,
+        Err(err) => {
+            println!("ERROR: {}", err);
+            return false;
+        },
+    };
+
+    if !output.status.success() {
+        println!("ERROR: {}", String::from_utf8(output.stderr).unwrap());
+        return false;
+    }
+
+    true
+}
+
+fn fix_project(path: &PathBuf) -> bool {
+    let travis_path = {
+        let mut path = path.clone();
+        path.push(".travis.yml");
+        path
+    };
+
+    lazy_static! {
+        static ref RE: Regex = Regex::new(r"sudo: false\ndist: trusty\n\n").unwrap();
+    }
+
+    let content = match fs::read(&travis_path) {
+        Ok(content) => content,
+        Err(err) => {
+            println!("ERROR: {}", err);
+            return false;
+        }
+    };
+
+    let content = RE.replace_all(&content, &b""[..]);
+
+    match fs::write(&travis_path, content) {
+        Ok(_) => (),
+        Err(err) => {
+            println!("ERROR: {}", err);
+            return false;
+        }
+    }
+
+    true
+}
+
+fn commit_changes(message: &str, path: &PathBuf) -> bool {
+    let mut command = Command::new("git");
+    command.arg("add").arg(".").current_dir(path);
+
+    let result = command.output();
+
+    let output = match result {
+        Ok(output) => output,
+        Err(err) => {
+            println!("ERROR: {}", err);
+            return false;
+        },
+    };
+
+    if !output.status.success() {
+        println!("ERROR: {}", String::from_utf8(output.stderr).unwrap());
+        return false;
+    }
+
+    let mut command = Command::new("git");
+    command.arg("commit").arg("-m").arg(message).current_dir(path);
 
     let result = command.output();
 

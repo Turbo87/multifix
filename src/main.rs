@@ -53,7 +53,7 @@ fn main() {
     println!(" ({} projects found)", relevant_projects.len());
 
     // Show checkboxed list of potentially fixable projects
-    print!("{} 🔬  Select projects to fix...", step(3, GLOBAL_STEP_COUNT));
+    print!("{} ✅  Select projects to fix...", step(3, GLOBAL_STEP_COUNT));
     let selected_projects = show_project_list(&relevant_projects);
     println!(" ({} projects selected)", selected_projects.len());
 
@@ -84,7 +84,7 @@ fn main() {
             continue;
         }
 
-        println!("{} 🛠  Fixing the project...", step(4, PROJECT_STEP_COUNT));
+        println!("{} 🛠   Fixing the project...", step(4, PROJECT_STEP_COUNT));
         if let Err(err) = fix_project(&path) {
             println!("ERROR: {}", err);
             continue;
@@ -97,7 +97,7 @@ fn main() {
             continue;
         }
 
-        println!("{} ☁️  Uploading changes...", step(6, PROJECT_STEP_COUNT));
+        println!("{} ☁️   Uploading changes...", step(6, PROJECT_STEP_COUNT));
         let url = match push_as_new_branch(&path) {
             Err(err) => {
                 println!("ERROR: {}", err);

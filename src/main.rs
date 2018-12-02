@@ -147,7 +147,7 @@ fn check_project(path: &PathBuf) -> bool {
     }
 
     lazy_static! {
-        static ref RE: Regex = Regex::new(r"sudo: false\ndist: trusty\n\n").unwrap();
+        static ref RE: Regex = Regex::new(r"sudo: false").unwrap();
     }
 
     let content = match fs::read(travis_path) {
@@ -262,11 +262,13 @@ fn fix_project(path: &PathBuf) -> Result<(), Error> {
     };
 
     lazy_static! {
-        static ref RE: Regex = Regex::new(r"sudo: false\ndist: trusty\n\n").unwrap();
+        static ref RE1: Regex = Regex::new(r"sudo: false\ndist: .*\n\n?").unwrap();
+        static ref RE2: Regex = Regex::new(r"sudo: false\n\n?").unwrap();
     }
 
     let content = fs::read(&travis_path)?;
-    let content = RE.replace_all(&content, &b""[..]);
+    let content = RE1.replace_all(&content, &b""[..]);
+    let content = RE2.replace_all(&content, &b""[..]);
 
     fs::write(&travis_path, content)?;
 

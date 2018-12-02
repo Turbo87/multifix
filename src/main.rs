@@ -4,6 +4,7 @@ extern crate cursive;
 #[macro_use] extern crate human_panic;
 extern crate ignore;
 #[macro_use] extern crate lazy_static;
+extern crate rayon;
 extern crate regex;
 extern crate webbrowser;
 
@@ -19,6 +20,7 @@ use cursive::traits::{Boxable, Identifiable, Scrollable};
 use cursive::views::{Checkbox, DummyView, ListView};
 use failure::Error;
 use ignore::WalkBuilder;
+use rayon::prelude::*;
 use regex::bytes::Regex;
 
 use ::commands::SuccessOutput;
@@ -56,62 +58,63 @@ fn main() {
     print!("{} ✅  Select projects to fix...", step(3, GLOBAL_STEP_COUNT));
     let selected_projects = show_project_list(&relevant_projects);
     println!(" ({} projects selected)", selected_projects.len());
+    println!();
 
-    for (path, label) in selected_projects {
-        println!();
-        println!("  {}", label.underline());
-        println!();
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(5).build().unwrap();
 
-        println!("{} 📡  Updating project...", step(1, PROJECT_STEP_COUNT));
-        if let Err(err) = update_project(&path) {
-            println!("ERROR: {}", err);
-            continue;
-        }
-        if let Err(err) = checkout_master(&path) {
-            println!("ERROR: {}", err);
-            continue;
-        }
-
-        println!("{} 🔬  Checking project for search pattern again...", step(2, PROJECT_STEP_COUNT));
-        if !check_project(&path) {
-            println!("Search pattern is no longer found. Skipping project!");
-            continue;
-        }
-
-        println!("{} 📎  Creating new `travis-sudo` branch...", step(3, PROJECT_STEP_COUNT));
-        if let Err(err) = create_branch("travis-sudo", &path) {
-            println!("ERROR: {}", err);
-            continue;
-        }
-
-        println!("{} 🛠   Fixing the project...", step(4, PROJECT_STEP_COUNT));
-        if let Err(err) = fix_project(&path) {
-            println!("ERROR: {}", err);
-            continue;
-        }
-
-        println!("{} 💾  Committing changes...", step(5, PROJECT_STEP_COUNT));
-        let message = "TravisCI: Remove deprecated `sudo: false` option\n\nsee https://blog.travis-ci.com/2018-11-19-required-linux-infrastructure-migration";
-        if let Err(err) = commit_changes(message, &path) {
-            println!("ERROR: {}", err);
-            continue;
-        }
-
-        println!("{} ☁️   Uploading changes...", step(6, PROJECT_STEP_COUNT));
-        let url = match push_as_new_branch(&path) {
-            Err(err) => {
+    pool.install(|| {
+        selected_projects.par_iter().for_each(|(path, label)| {
+            println!("{} 📡  {} Updating project...", step(1, PROJECT_STEP_COUNT), label.dimmed());
+            if let Err(err) = update_project(&path) {
                 println!("ERROR: {}", err);
-                continue;
+                return;
             }
-            Ok(Some(url)) => url,
-            Ok(None) => continue,
-        };
+            if let Err(err) = checkout_master(&path) {
+                println!("ERROR: {}", err);
+                return;
+            }
 
-        println!("{} 📬️  Opening browser for PR...", step(7, PROJECT_STEP_COUNT));
-        if let Err(err) = webbrowser::open(&url) {
-            println!("ERROR: {}", err);
-        }
-    }
+            println!("{} 🔬  {} Checking project for search pattern again...", step(2, PROJECT_STEP_COUNT), label.dimmed());
+            if !check_project(&path) {
+                println!("Search pattern is no longer found. Skipping project!");
+                return;
+            }
+
+            println!("{} 📎  {} Creating new `travis-sudo` branch...", step(3, PROJECT_STEP_COUNT), label.dimmed());
+            if let Err(err) = create_branch("travis-sudo", &path) {
+                println!("ERROR: {}", err);
+                return;
+            }
+
+            println!("{} 🛠   {} Fixing the project...", step(4, PROJECT_STEP_COUNT), label.dimmed());
+            if let Err(err) = fix_project(&path) {
+                println!("ERROR: {}", err);
+                return;
+            }
+
+            println!("{} 💾  {} Committing changes...", step(5, PROJECT_STEP_COUNT), label.dimmed());
+            let message = "TravisCI: Remove deprecated `sudo: false` option\n\nsee https://blog.travis-ci.com/2018-11-19-required-linux-infrastructure-migration";
+            if let Err(err) = commit_changes(message, &path) {
+                println!("ERROR: {}", err);
+                return;
+            }
+
+            println!("{} ☁️   {} Uploading changes...", step(6, PROJECT_STEP_COUNT), label.dimmed());
+            let url = match push_as_new_branch(&path) {
+                Err(err) => {
+                    println!("ERROR: {}", err);
+                    return;
+                }
+                Ok(Some(url)) => url,
+                Ok(None) => return,
+            };
+
+            println!("{} 📬️  {} Opening browser for PR...", step(7, PROJECT_STEP_COUNT), label.dimmed());
+            if let Err(err) = webbrowser::open(&url) {
+                println!("ERROR: {}", err);
+            }
+        });
+    });
 }
 
 fn step(n: u32, total: u32) -> ColoredString {

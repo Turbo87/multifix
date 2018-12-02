@@ -1,0 +1,21 @@
+branches:
+  only:
+    - master
+    - /^v\d+\.\d+\.\d+/  # version tags
+
+language: rust
+rust:
+  - stable
+  - beta
+  - nightly
+
+matrix:
+  fast_finish: true
+  allow_failures:
+    - rust: nightly
+
+cache: cargo
+
+script:
+  - cargo build
+  - cargo test

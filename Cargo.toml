@@ -5,6 +5,7 @@ authors = ["Tobias Bieniek <tobias.bieniek@gmail.com>"]
 
 [dependencies]
 colored = "1.6.1"
+failure = "0.1.3"
 human-panic = "1.0.1"
 ignore = "0.4.4"
 lazy_static = "1.2.0"

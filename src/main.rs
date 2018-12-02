@@ -1,5 +1,6 @@
 extern crate colored;
 extern crate cursive;
+#[macro_use] extern crate human_panic;
 extern crate ignore;
 #[macro_use] extern crate lazy_static;
 extern crate regex;
@@ -22,6 +23,8 @@ const GLOBAL_STEP_COUNT: u32 = 3;
 const PROJECT_STEP_COUNT: u32 = 7;
 
 fn main() {
+    setup_panic!();
+
     let args: Vec<_> = env::args().collect();
 
     let root_path = args.get(1)

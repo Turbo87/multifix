@@ -259,10 +259,10 @@ fn git_checkout(remote: &str, path: &PathBuf) -> Command {
 }
 
 fn create_branch(name: &str, path: &PathBuf) -> bool {
-    let mut command = Command::new("git");
-    command.arg("checkout").arg("-b").arg(name).current_dir(path);
-
-    let result = command.output();
+    let result = Command::new("git")
+        .arg("checkout").arg("-b").arg(name)
+        .current_dir(path)
+        .output();
 
     let output = match result {
         Ok(output) => output,
@@ -313,10 +313,10 @@ fn fix_project(path: &PathBuf) -> bool {
 }
 
 fn commit_changes(message: &str, path: &PathBuf) -> bool {
-    let mut command = Command::new("git");
-    command.arg("add").arg(".").current_dir(path);
-
-    let result = command.output();
+    let result = Command::new("git")
+        .arg("add").arg(".")
+        .current_dir(path)
+        .output();
 
     let output = match result {
         Ok(output) => output,
@@ -331,10 +331,10 @@ fn commit_changes(message: &str, path: &PathBuf) -> bool {
         return false;
     }
 
-    let mut command = Command::new("git");
-    command.arg("commit").arg("-m").arg(message).current_dir(path);
-
-    let result = command.output();
+    let result = Command::new("git")
+        .arg("commit").arg("-m").arg(message)
+        .current_dir(path)
+        .output();
 
     let output = match result {
         Ok(output) => output,
@@ -353,10 +353,10 @@ fn commit_changes(message: &str, path: &PathBuf) -> bool {
 }
 
 fn push_as_new_branch(path: &PathBuf) -> Option<String> {
-    let mut command = Command::new("git");
-    command.arg("push").arg("origin").arg("HEAD").arg("-u").current_dir(path);
-
-    let result = command.output();
+    let result = Command::new("git")
+        .arg("push").arg("origin").arg("HEAD").arg("-u")
+        .current_dir(path)
+        .output();
 
     let output = match result {
         Ok(output) => output,

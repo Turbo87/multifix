@@ -162,6 +162,19 @@ fn add_labels_and_sort<'a>(paths: &'a Vec<&'a PathBuf>, root_path: &PathBuf) -> 
 fn show_project_list<'a>(input: &'a Vec<(&'a &'a PathBuf, String)>) -> Vec<&'a (&'a &'a PathBuf, String)> {
     let mut siv = Cursive::default();
 
+    siv.set_theme(cursive::theme::Theme {
+        shadow: false,
+        borders: cursive::theme::BorderStyle::None,
+        palette: {
+            let mut palette = cursive::theme::Palette::default();
+            palette.set_color("background", cursive::theme::Color::TerminalDefault);
+            palette.set_color("view", cursive::theme::Color::TerminalDefault);
+            palette.set_color("primary", cursive::theme::Color::TerminalDefault);
+            palette.set_color("highlight", cursive::theme::Color::Dark(cursive::theme::BaseColor::Blue));
+            palette
+        }
+    });
+
     let list_view = {
         let mut list = ListView::new();
 

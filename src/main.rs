@@ -17,6 +17,7 @@ use cursive::Cursive;
 use cursive::event::Key;
 use cursive::traits::{Boxable, Identifiable, Scrollable};
 use cursive::views::{Checkbox, DummyView, ListView};
+use failure::Error;
 use ignore::WalkBuilder;
 use regex::bytes::Regex;
 
@@ -62,10 +63,12 @@ fn main() {
         println!();
 
         println!("{} 📡  Updating project...", step(1, PROJECT_STEP_COUNT));
-        if !update_project(&path) {
+        if let Err(err) = update_project(&path) {
+            println!("ERROR: {}", err);
             continue;
         }
-        if !checkout_master(&path) {
+        if let Err(err) = checkout_master(&path) {
+            println!("ERROR: {}", err);
             continue;
         }
 
@@ -76,24 +79,32 @@ fn main() {
         }
 
         println!("{} 📎  Creating new `travis-sudo` branch...", step(3, PROJECT_STEP_COUNT));
-        if !create_branch("travis-sudo", &path) {
+        if let Err(err) = create_branch("travis-sudo", &path) {
+            println!("ERROR: {}", err);
             continue;
         }
 
         println!("{} 🛠  Fixing the project...", step(4, PROJECT_STEP_COUNT));
-        if !fix_project(&path) {
+        if let Err(err) = fix_project(&path) {
+            println!("ERROR: {}", err);
             continue;
         }
 
         println!("{} 💾  Committing changes...", step(5, PROJECT_STEP_COUNT));
-        if !commit_changes("TravisCI: Remove deprecated `sudo: false` option\n\nsee https://blog.travis-ci.com/2018-11-19-required-linux-infrastructure-migration", &path) {
+        let message = "TravisCI: Remove deprecated `sudo: false` option\n\nsee https://blog.travis-ci.com/2018-11-19-required-linux-infrastructure-migration";
+        if let Err(err) = commit_changes(message, &path) {
+            println!("ERROR: {}", err);
             continue;
         }
 
         println!("{} ☁️  Uploading changes...", step(6, PROJECT_STEP_COUNT));
         let url = match push_as_new_branch(&path) {
-            Some(url) => url,
-            None => continue,
+            Err(err) => {
+                println!("ERROR: {}", err);
+                continue;
+            }
+            Ok(Some(url)) => url,
+            Ok(None) => continue,
         };
 
         println!("{} 📬️  Opening browser for PR...", step(7, PROJECT_STEP_COUNT));
@@ -204,22 +215,13 @@ fn show_project_list<'a>(input: &'a Vec<(&'a &'a PathBuf, String)>) -> Vec<&'a (
         .collect()
 }
 
-fn update_project(path: &PathBuf) -> bool {
+fn update_project(path: &PathBuf) -> Result<(), Error> {
     let mut git_fetch_upstream = git_fetch("upstream", &path);
     let mut git_fetch_origin = git_fetch("origin", &path);
 
-    let result = git_fetch_upstream.success_output()
-        .or_else(|_| git_fetch_origin.success_output());
-
-    match result {
-        Ok(_) => {},
-        Err(err) => {
-            println!("ERROR: {}", err);
-            return false;
-        },
-    };
-
-    true
+    git_fetch_upstream.success_output()
+        .or_else(|_| git_fetch_origin.success_output())
+        .map(|_| ())
 }
 
 fn git_fetch(remote: &str, path: &PathBuf) -> Command {
@@ -229,22 +231,13 @@ fn git_fetch(remote: &str, path: &PathBuf) -> Command {
 }
 
 
-fn checkout_master(path: &PathBuf) -> bool {
+fn checkout_master(path: &PathBuf) -> Result<(), Error> {
     let mut git_checkout_upstream = git_checkout("upstream", &path);
     let mut git_checkout_origin = git_checkout("origin", &path);
 
-    let result = git_checkout_upstream.success_output()
-        .or_else(|_| git_checkout_origin.success_output());
-
-    match result {
-        Ok(_) => {},
-        Err(err) => {
-            println!("ERROR: {}", err);
-            return false;
-        },
-    };
-
-    true
+    git_checkout_upstream.success_output()
+        .or_else(|_| git_checkout_origin.success_output())
+        .map(|_| ())
 }
 
 fn git_checkout(remote: &str, path: &PathBuf) -> Command {
@@ -253,24 +246,15 @@ fn git_checkout(remote: &str, path: &PathBuf) -> Command {
     command
 }
 
-fn create_branch(name: &str, path: &PathBuf) -> bool {
-    let result = Command::new("git")
+fn create_branch(name: &str, path: &PathBuf) -> Result<(), Error> {
+    Command::new("git")
         .arg("checkout").arg("-b").arg(name)
         .current_dir(path)
-        .success_output();
-
-    match result {
-        Ok(_) => {},
-        Err(err) => {
-            println!("ERROR: {}", err);
-            return false;
-        },
-    };
-
-    true
+        .success_output()
+        .map(|_| ())
 }
 
-fn fix_project(path: &PathBuf) -> bool {
+fn fix_project(path: &PathBuf) -> Result<(), Error> {
     let travis_path = {
         let mut path = path.clone();
         path.push(".travis.yml");
@@ -281,70 +265,32 @@ fn fix_project(path: &PathBuf) -> bool {
         static ref RE: Regex = Regex::new(r"sudo: false\ndist: trusty\n\n").unwrap();
     }
 
-    let content = match fs::read(&travis_path) {
-        Ok(content) => content,
-        Err(err) => {
-            println!("ERROR: {}", err);
-            return false;
-        }
-    };
-
+    let content = fs::read(&travis_path)?;
     let content = RE.replace_all(&content, &b""[..]);
 
-    match fs::write(&travis_path, content) {
-        Ok(_) => (),
-        Err(err) => {
-            println!("ERROR: {}", err);
-            return false;
-        }
-    }
+    fs::write(&travis_path, content)?;
 
-    true
+    Ok(())
 }
 
-fn commit_changes(message: &str, path: &PathBuf) -> bool {
-    let result = Command::new("git")
+fn commit_changes(message: &str, path: &PathBuf) -> Result<(), Error> {
+    Command::new("git")
         .arg("add").arg(".")
         .current_dir(path)
-        .success_output();
+        .success_output()?;
 
-    match result {
-        Ok(_) => {},
-        Err(err) => {
-            println!("ERROR: {}", err);
-            return false;
-        },
-    };
-
-    let result = Command::new("git")
+    Command::new("git")
         .arg("commit").arg("-m").arg(message)
         .current_dir(path)
-        .success_output();
-
-    match result {
-        Ok(_) => {},
-        Err(err) => {
-            println!("ERROR: {}", err);
-            return false;
-        },
-    };
-
-    true
+        .success_output()
+        .map(|_| ())
 }
 
-fn push_as_new_branch(path: &PathBuf) -> Option<String> {
-    let result = Command::new("git")
+fn push_as_new_branch(path: &PathBuf) -> Result<Option<String>, Error> {
+    let output = Command::new("git")
         .arg("push").arg("origin").arg("HEAD").arg("-u")
         .current_dir(path)
-        .success_output();
-
-    let output = match result {
-        Ok(output) => output,
-        Err(err) => {
-            println!("ERROR: {}", err);
-            return None;
-        },
-    };
+        .success_output()?;
 
     lazy_static! {
         static ref RE: Regex = Regex::new(r"https://github.com/.*\n").unwrap();
@@ -354,9 +300,9 @@ fn push_as_new_branch(path: &PathBuf) -> Option<String> {
         Some(cap) => cap,
         None => {
             println!("ERROR: Could not find PR URL in:\n{}", std::str::from_utf8(&output.stderr).unwrap());
-            return None;
+            return Ok(None);
         }
     };
 
-    Some(std::str::from_utf8(cap.as_bytes()).unwrap().trim().to_owned())
+    Ok(Some(std::str::from_utf8(cap.as_bytes()).unwrap().trim().to_owned()))
 }
